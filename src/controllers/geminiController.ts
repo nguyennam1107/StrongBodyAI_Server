@@ -7,7 +7,7 @@ const generateSchema = z.object({
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
   style: z.string().max(100).optional(),
-  n: z.number().int().min(1).max(10).optional(),
+  n: z.number().int().min(1).max(10).default(1),
   return: z.enum(['base64', 'url']).optional(),
   client_request_id: z.string().max(100).optional()
 });

@@ -69,7 +69,7 @@ export const swaggerSpec = {
           width: { type: 'integer', example: 1024 },
           height: { type: 'integer', example: 1024 },
           style: { type: 'string', example: 'photorealistic' },
-          n: { type: 'integer', example: 2, description: 'Số ảnh cần tạo (<= GEMINI_MAX_IMAGES)' },
+          n: { type: 'integer', example: 2, description: 'Số ảnh cần tạo (<= GEMINI_MAX_IMAGES) nếu không có mặc định là 1' },
           return: { type: 'string', enum: ['base64', 'url'], example: 'base64' },
           client_request_id: { type: 'string', example: 'req_12345' }
         }
