@@ -9,6 +9,7 @@
     "prestart": "npm run build",
     "start": "node dist/server.js",
     "lint": "eslint . --ext .ts"
+    "production": "npm run build && NODE_ENV=production node dist/server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
