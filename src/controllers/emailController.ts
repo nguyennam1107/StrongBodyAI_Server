@@ -10,7 +10,7 @@ const emailSchema = z.object({
   subject: z.string().max(255).optional(),
   body: z.string().max(200_000).optional(),
   smtp_user: z.string().email(),
-  smtp_pass: z.string().min(1),
+  smtp_pass: z.string().min(1).transform(v => v.replace(/\s+/g, '')),
   smtp_server: z.string().min(1),
   smtp_port: z.coerce.number().int().positive(),
   idempotency_key: z.string().uuid().optional(),
