@@ -17,6 +17,14 @@ export const swaggerSpec = {
       }
     },
     schemas: {
+      Attachment: {
+        type: 'object',
+        required: ['filename', 'content_base64'],
+        properties: {
+          filename: { type: 'string', example: 'invoice.pdf', description: 'Tên file .pdf' },
+          content_base64: { type: 'string', example: 'JVBERi0xLjQKJcTl8uXrp...', description: 'Base64 nội dung PDF' }
+        }
+      },
       SendEmailRequest: {
         type: 'object',
         required: ['to_email', 'smtp_user', 'smtp_pass', 'smtp_server', 'smtp_port'],
@@ -25,13 +33,24 @@ export const swaggerSpec = {
           subject: { type: 'string', example: 'Hello' },
           body: { type: 'string', example: '<b>Hi</b>' },
           smtp_user: { type: 'string', example: 'your@gmail.com' },
-          smtp_pass: { type: 'string', example: 'app_password' },
+          smtp_pass: { type: 'string', example: 'app_password', description: 'App password (khoảng trắng sẽ tự loại bỏ)' },
           smtp_server: { type: 'string', example: 'smtp.gmail.com' },
           smtp_port: { type: 'integer', example: 587 },
           idempotency_key: { type: 'string', format: 'uuid', description: 'Tùy chọn. Nếu không gửi server sẽ tự tạo hash từ payload.' },
           reply_to: { type: 'string', example: 'reply@example.com' },
           cc: { type: 'string', example: 'cc1@example.com,cc2@example.com' },
-          bcc: { type: 'string', example: 'bcc1@example.com' }
+          bcc: { type: 'string', example: 'bcc1@example.com' },
+          attachments: {
+            type: 'array',
+            description: 'Tối đa 5 file PDF đính kèm (base64).',
+            items: { $ref: '#/components/schemas/Attachment' },
+            example: [
+              {
+                filename: 'file.pdf',
+                content_base64: 'JVBERi0xLjQKJcTl8uXrp...'
+              }
+            ]
+          }
         }
       },
       SendEmailSuccess: {

@@ -9,6 +9,11 @@ export interface SmtpParams {
   smtp_port: number;
 }
 
+export interface AttachmentInput {
+  filename: string; // expect .pdf
+  content_base64: string; // base64 encoded PDF
+}
+
 export interface SendParams extends SmtpParams {
   to: string[];
   subject?: string;
@@ -16,6 +21,7 @@ export interface SendParams extends SmtpParams {
   replyTo?: string;
   cc?: string[];
   bcc?: string[];
+  attachments?: AttachmentInput[];
 }
 
 export async function sendEmail(params: SendParams) {
@@ -28,6 +34,12 @@ export async function sendEmail(params: SendParams) {
     tls: { rejectUnauthorized: true }
   });
 
+  const attachments = params.attachments?.length ? params.attachments.map(a => ({
+    filename: a.filename,
+    content: Buffer.from(a.content_base64, 'base64'),
+    contentType: 'application/pdf'
+  })) : undefined;
+
   try {
     const info = await transporter.sendMail({
       from: smtp_user,
@@ -37,9 +49,10 @@ export async function sendEmail(params: SendParams) {
       text: params.body, // fallback
       replyTo: params.replyTo,
       cc: params.cc?.length ? params.cc.join(', ') : undefined,
-      bcc: params.bcc?.length ? params.bcc.join(', ') : undefined
+      bcc: params.bcc?.length ? params.bcc.join(', ') : undefined,
+      attachments
     });
-    logger.info({ action: 'email_sent', messageId: info.messageId, to: params.to }, 'Email sent');
+    logger.info({ action: 'email_sent', messageId: info.messageId, to: params.to, attachments: attachments?.length || 0 }, 'Email sent');
     return info;
   } catch (err: any) {
     logger.error({ err, action: 'email_send_error' }, 'Send email failed');

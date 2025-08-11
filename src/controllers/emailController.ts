@@ -5,6 +5,11 @@ import { getIdempotent, setIdempotent } from '../lib/idempotencyStore.js';
 import { logger } from '../utils/logger.js';
 import crypto from 'crypto';
 
+const attachmentSchema = z.object({
+  filename: z.string().min(1).regex(/\.pdf$/i, 'Only .pdf allowed'),
+  content_base64: z.string().min(10)
+});
+
 const emailSchema = z.object({
   to_email: z.string().min(1),
   subject: z.string().max(255).optional(),
@@ -16,7 +21,8 @@ const emailSchema = z.object({
   idempotency_key: z.string().uuid().optional(),
   reply_to: z.string().email().optional(),
   cc: z.string().optional(),
-  bcc: z.string().optional()
+  bcc: z.string().optional(),
+  attachments: z.array(attachmentSchema).max(5).optional()
 });
 
 function deriveKey(payload: any): string {
@@ -70,7 +76,8 @@ export async function sendEmailHandler(req: Request, res: Response) {
       body: data.body,
       replyTo: data.reply_to,
       cc: data.cc ? data.cc.split(',').map((s: string) => s.trim()).filter((v: string) => Boolean(v)) : undefined,
-      bcc: data.bcc ? data.bcc.split(',').map((s: string) => s.trim()).filter((v: string) => Boolean(v)) : undefined
+      bcc: data.bcc ? data.bcc.split(',').map((s: string) => s.trim()).filter((v: string) => Boolean(v)) : undefined,
+      attachments: data.attachments
     });
 
     const response = { success: true, message: 'Email sent', info: { idempotency_key: key, messageId: info.messageId, providerResponse: info } };
