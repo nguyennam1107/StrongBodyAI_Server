@@ -8,7 +8,7 @@ interface GenerateImageParams {
   height?: number;
   style?: string;
   n?: number;
-  return?: 'base64' | 'url';
+  return?: 'base64' | 'url' | 'binary'; // added binary
   client_request_id?: string;
 }
 
