@@ -1,0 +1,58 @@
+[{{"data":".....","row_number": 2,
+"Email": "nguyennam22279@gmail.com",
+"Status": "Chưa gửi",
+"stmp_pass": "ycvq tzpm ejuw elca",
+"Daily_Sent": 0,
+"Daily_Limit": 100,
+"Last_Used": "2025-07-29T17:31:33.191769+07:00",
+"Api": "https://strongbodyai-server.onrender.com/send-email",
+"Store Name": "Trang",
+"Sender Name": "Trang",
+"Email người gửi": "partner@strongbody.ai",
+"Sent Time": "Email chứa dấu cách (email không tồn tại)",
+"col_7": "Nam",
+"Subject_Template": "StrongBody.AI: $3M Investment for 10% Stake in Booming Wellness Market",
+"Content_Template": "Dear Doctor,\n\nI hope you are doing well.\nMy name is Anora Mikey, and I’m assisting StrongBody.Ai with their investor outreach. Having closely followed their progress, I’m convinced that StrongBody.Ai presents a compelling investment opportunity in the rapidly evolving health technology landscape.\n\nHeadquartered in Singapore, StrongBody.Ai is already making waves in field.\n\nThere is absolutely no cost to register a Seller account.\nYou can visit our platform and explore the services we offer at the following link: https://strongbody.ai/?ref=strongbodymentalhealth280\n\nThank you for your time and for considering joining our platform.\n\nBest regards,\n\nStrongbody team",
+"Daily_sent_template": 0,
+"error": "JSON parameter needs to be valid JSON"                                                                            {
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.Api }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            },
+            {
+              "name": "x-api-key",
+              "value": "7a868516-f7a1-497e-bf92-1ebb700b8267"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"to_email\": \"{{ $json.Email }}\",\n  \"subject\": \"{{ $json.Subject_Template }}\",\n  \"body\": \"{{ $json.Content_Template }}\",\n  \"dear_name\": \"{{ $json.col_7 }}\",\n  \"smtp_user\": \"{{ $json['Email người gửi'] }}\",\n  \"smtp_pass\": \"{{ $json.stmp_pass }}\",\n  \"smtp_server\": \"smtp.gmail.com\",\n  \"smtp_port\": 587,\n  \"attachments\": [\n    {\n      \"filename\": \"{{ $('Read/Write Files from Disk').item.json.fileName }}\",\n      \"content_base64\": \"{{ $json.data }}\"\n    }\n  ]\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -752,
+        160
+      ],
+      "id": "e53fb40a-b44d-48f4-8510-62bb56117c75",
+      "name": "HTTP Request1",
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {},
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9b4563afe86b8f9c8c42c90976b534e95ce6c8eb36060cf99f4467bbc0a35587"
+  }
+}

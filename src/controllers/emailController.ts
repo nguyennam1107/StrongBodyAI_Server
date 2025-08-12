@@ -46,6 +46,22 @@ function deriveKey(payload: any): string {
   return crypto.createHash('sha256').update(json).digest('hex').slice(0, 32); // 32 hex chars
 }
 
+function buildSuccessResponse(params: { key: string; info: any; subject?: string; smtpUser: string; }): any {
+  const sent_time = new Date().toISOString();
+  return {
+    success: true,
+    message: 'Email sent',
+    // Các field phục vụ n8n Code node gom nhóm
+    subject: params.subject || '',
+    assigned_account_email: params.smtpUser,
+    sent_time,
+    // Thông tin thêm
+    idempotency_key: params.key,
+    messageId: params.info.messageId,
+    providerResponse: params.info
+  };
+}
+
 export async function sendEmailHandler(req: Request, res: Response) {
   const parsed = emailSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -89,7 +105,17 @@ export async function sendEmailHandler(req: Request, res: Response) {
   const existing = getIdempotent(key);
   if (existing && existing.status === 'success') {
     logger.info({ key }, 'Idempotent replay prevented (return cached response)');
-    return res.json(existing.response);
+    const cached = existing.response;
+    // Đảm bảo format mới nếu bản cũ chưa có
+    if (cached && cached.success && (cached.subject === undefined || cached.assigned_account_email === undefined || cached.sent_time === undefined)) {
+      return res.json({
+        ...cached,
+        subject: cached.subject ?? data.subject ?? '',
+        assigned_account_email: cached.assigned_account_email ?? data.smtp_user,
+        sent_time: cached.sent_time ?? new Date(existing.createdAt).toISOString()
+      });
+    }
+    return res.json(cached);
   }
 
   // Prep body với Dear Sir
@@ -110,7 +136,7 @@ export async function sendEmailHandler(req: Request, res: Response) {
       attachments: data.attachments
     });
 
-    const response = { success: true, message: 'Email sent', info: { idempotency_key: key, messageId: info.messageId, providerResponse: info } };
+    const response = buildSuccessResponse({ key, info, subject: data.subject, smtpUser: data.smtp_user });
     setIdempotent(key, { status: 'success', response, createdAt: Date.now() });
     return res.json(response);
   } catch (err: any) {
