@@ -43,14 +43,16 @@ export const swaggerSpec = {
           bcc: { type: 'string', example: 'bcc1@example.com' },
           attachments: {
             type: 'array',
-            description: 'Tối đa 5 file PDF đính kèm (base64).',
-            items: { $ref: '#/components/schemas/Attachment' },
-            example: [
-              {
-                filename: 'file.pdf',
-                content_base64: 'JVBERi0xLjQKJcTl8uXrp...'
+            maxItems: 5,
+            description: 'Up to 5 PDF attachments. Each <= ~1.6MB decoded; total <= ~6MB. Accepts raw base64 or data URI (data:application/pdf;base64,...)',
+            items: {
+              type: 'object',
+              required: ['filename', 'content_base64'],
+              properties: {
+                filename: { type: 'string', example: 'file.pdf' },
+                content_base64: { type: 'string', description: 'Base64 content of PDF (no newlines). May include data URI prefix.' }
               }
-            ]
+            }
           }
         }
       },
@@ -133,11 +135,45 @@ export const swaggerSpec = {
     },
     '/send-email': {
       post: {
+        summary: 'Send an email via custom SMTP',
         tags: ['Email'],
-        summary: 'Gửi email qua SMTP',
         requestBody: {
           required: true,
-          content: { 'application/json': { schema: { $ref: '#/components/schemas/SendEmailRequest' } } }
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  to_email: { type: 'string', description: 'Recipient email(s), comma separated' },
+                  subject: { type: 'string', maxLength: 255 },
+                  body: { type: 'string', maxLength: 200000 },
+                  dear_name: { type: 'string', maxLength: 255, description: 'Optional name to prepend greeting paragraph: <p>Dear Sir {dear_name}</p>' },
+                  smtp_user: { type: 'string', format: 'email' },
+                  smtp_pass: { type: 'string', description: 'SMTP password (internal whitespace removed automatically)' },
+                  smtp_server: { type: 'string' },
+                  smtp_port: { type: 'integer' },
+                  idempotency_key: { type: 'string', format: 'uuid', description: 'Optional; auto-derived hash if omitted' },
+                  reply_to: { type: 'string', format: 'email' },
+                  cc: { type: 'string', description: 'Comma separated list' },
+                  bcc: { type: 'string', description: 'Comma separated list' },
+                  attachments: {
+                    type: 'array',
+                    maxItems: 5,
+                    description: 'Up to 5 PDF attachments. Each <= ~1.6MB decoded; total <= ~6MB. Accepts raw base64 or data URI (data:application/pdf;base64,...)',
+                    items: {
+                      type: 'object',
+                      required: ['filename', 'content_base64'],
+                      properties: {
+                        filename: { type: 'string', example: 'file.pdf' },
+                        content_base64: { type: 'string', description: 'Base64 content of PDF (no newlines). May include data URI prefix.' }
+                      }
+                    }
+                  }
+                },
+                required: ['to_email', 'smtp_user', 'smtp_pass', 'smtp_server', 'smtp_port']
+              }
+            }
+          }
         },
         responses: {
           '200': { description: 'Email sent', content: { 'application/json': { schema: { $ref: '#/components/schemas/SendEmailSuccess' } } } },

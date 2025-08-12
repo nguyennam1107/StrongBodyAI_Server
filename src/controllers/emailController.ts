@@ -5,6 +5,9 @@ import { getIdempotent, setIdempotent } from '../lib/idempotencyStore.js';
 import { logger } from '../utils/logger.js';
 import crypto from 'crypto';
 
+const MAX_ATTACHMENT_BYTES = 1.6 * 1024 * 1024; // ~1.6MB sau decode (an toàn cho file gốc ~1.2MB)
+const MAX_TOTAL_ATTACHMENTS_BYTES = 6 * 1024 * 1024; // tổng ~6MB
+
 const attachmentSchema = z.object({
   filename: z.string().min(1).regex(/\.pdf$/i, 'Only .pdf allowed'),
   content_base64: z.string().min(10)
@@ -56,6 +59,29 @@ export async function sendEmailHandler(req: Request, res: Response) {
   }
   if (recipients.some((r: string) => r.includes(' '))) {
     return res.status(400).json({ success: false, error: { message: 'The recipient address contains space', type: 'INVALID_RECIPIENT' } });
+  }
+
+  // Validate attachment sizes
+  if (data.attachments?.length) {
+    let total = 0;
+    for (const a of data.attachments) {
+      let b64 = a.content_base64.trim();
+      const m = b64.match(/^data:application\/pdf;base64,(.+)$/i);
+      if (m) b64 = m[1];
+      try {
+        const buf = Buffer.from(b64, 'base64');
+        const size = buf.length;
+        total += size;
+        if (size > MAX_ATTACHMENT_BYTES) {
+          return res.status(400).json({ success: false, error: { message: `Attachment ${a.filename} too large (> ${(MAX_ATTACHMENT_BYTES/1024/1024).toFixed(1)}MB)`, type: 'VALIDATION' } });
+        }
+      } catch {
+        return res.status(400).json({ success: false, error: { message: `Attachment ${a.filename} base64 invalid`, type: 'VALIDATION' } });
+      }
+    }
+    if (total > MAX_TOTAL_ATTACHMENTS_BYTES) {
+      return res.status(400).json({ success: false, error: { message: `Total attachments exceed ${(MAX_TOTAL_ATTACHMENTS_BYTES/1024/1024).toFixed(1)}MB`, type: 'VALIDATION' } });
+    }
   }
 
   // Lấy key client gửi hoặc tự suy diễn để chống duplicate cùng payload

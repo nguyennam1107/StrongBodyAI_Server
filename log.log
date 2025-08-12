@@ -1,0 +1,11 @@
+error
+message
+500 - "{\"success\":false,\"error\":{\"message\"😕"request entity too large\",\"type\"😕"INTERNAL_ERROR\"}}"
+name
+AxiosError
+stack
+AxiosError: Request failed with status code 500\n at settle (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/axios@1.8.3/node_modules/axios/lib/core/settle.js:19:12)\n at RedirectableRequest.handleResponse (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/axios@1.8.3/node_modules/axios/lib/adapters/http.js:547:9)\n at RedirectableRequest.emit (node:events:530:35)\n at RedirectableRequest._processResponse (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/follow-redirects@1.15.9/node_modules/follow-redirects/index.js:409:10)\n at ClientRequest.RedirectableRequest._onNativeRespon...
+code
+ERR_BAD_RESPONSE
+status
+500
