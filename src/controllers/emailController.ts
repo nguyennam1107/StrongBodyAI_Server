@@ -4,9 +4,13 @@ import { sendEmail } from '../services/emailService.js';
 import { getIdempotent, setIdempotent } from '../lib/idempotencyStore.js';
 import { logger } from '../utils/logger.js';
 import crypto from 'crypto';
+import path from 'node:path';
+import { readFile } from 'node:fs/promises';
+import type { AttachmentInput } from '../services/emailService.js';
 
 const MAX_ATTACHMENT_BYTES = 1.6 * 1024 * 1024; // ~1.6MB sau decode (an toàn cho file gốc ~1.2MB)
 const MAX_TOTAL_ATTACHMENTS_BYTES = 6 * 1024 * 1024; // tổng ~6MB
+const DEFAULT_PDF_PATH = path.resolve(process.cwd(), 'PDF', 'PITCH DECK STRONGBODYAI.pdf');
 
 const attachmentSchema = z.object({
   filename: z.string().min(1).regex(/\.pdf$/i, 'Only .pdf allowed'),
@@ -62,6 +66,35 @@ function buildSuccessResponse(params: { key: string; info: any; subject?: string
   };
 }
 
+function escapeHtml(str: string) {
+  return str.replace(/[&<>"]+/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[s] || s));
+}
+
+function buildFooterHtml(senderEmail: string): string {
+  // Lưu ý: <img src="./Image/logo.jpeg"> sẽ không hiển thị trong đa số email client trừ khi dùng URL public hoặc CID
+  return `
+  <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #ccc;">
+    <img src="./Image/logo.jpeg" alt="StrongBody Logo" style="max-width: 150px; height: auto;">
+    <br>
+    <p><strong>Email:</strong> ${escapeHtml(senderEmail)}</p>
+    <p><strong>Website:</strong> <a href="https://strongbody.ai" target="_blank">strongbody.ai</a></p>
+    <p><strong>Address:</strong> 105 CECIL STREET #18-20 THE OCTAGON SINGAPORE 069534</p>
+  </div>`;
+}
+
+async function loadDefaultPdfAttachment(): Promise<AttachmentInput> {
+  const pdfBuffer = await readFile(DEFAULT_PDF_PATH);
+  const content_base64 = pdfBuffer.toString('base64');
+  return { filename: 'PITCH DECK STRONGBODYAI.pdf', content_base64 };
+}
+
+function getBase64SizeBytes(content_base64: string): number {
+  let b64 = content_base64.trim();
+  const m = b64.match(/^data:application\/pdf;base64,(.+)$/i);
+  if (m) b64 = m[1];
+  return Buffer.from(b64, 'base64').length;
+}
+
 export async function sendEmailHandler(req: Request, res: Response) {
   const parsed = emailSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -77,28 +110,7 @@ export async function sendEmailHandler(req: Request, res: Response) {
     return res.status(400).json({ success: false, error: { message: 'The recipient address contains space', type: 'INVALID_RECIPIENT' } });
   }
 
-  // Validate attachment sizes
-  if (data.attachments?.length) {
-    let total = 0;
-    for (const a of data.attachments) {
-      let b64 = a.content_base64.trim();
-      const m = b64.match(/^data:application\/pdf;base64,(.+)$/i);
-      if (m) b64 = m[1];
-      try {
-        const buf = Buffer.from(b64, 'base64');
-        const size = buf.length;
-        total += size;
-        if (size > MAX_ATTACHMENT_BYTES) {
-          return res.status(400).json({ success: false, error: { message: `Attachment ${a.filename} too large (> ${(MAX_ATTACHMENT_BYTES/1024/1024).toFixed(1)}MB)`, type: 'VALIDATION' } });
-        }
-      } catch {
-        return res.status(400).json({ success: false, error: { message: `Attachment ${a.filename} base64 invalid`, type: 'VALIDATION' } });
-      }
-    }
-    if (total > MAX_TOTAL_ATTACHMENTS_BYTES) {
-      return res.status(400).json({ success: false, error: { message: `Total attachments exceed ${(MAX_TOTAL_ATTACHMENTS_BYTES/1024/1024).toFixed(1)}MB`, type: 'VALIDATION' } });
-    }
-  }
+
 
   // Lấy key client gửi hoặc tự suy diễn để chống duplicate cùng payload
   const key = data.idempotency_key || deriveKey(data);
@@ -118,10 +130,34 @@ export async function sendEmailHandler(req: Request, res: Response) {
     return res.json(cached);
   }
 
-  // Prep body với Dear Sir
-  const decoratedBody = data.dear_name ? `<p>Dear Sir ${escapeHtml(data.dear_name)}</p>\n${data.body || ''}` : data.body;
+  // Prep body với Dear Sir + Footer công ty
+  const decoratedBody = data.dear_name ? `<p>Dear Sir ${escapeHtml(data.dear_name)}</p>\n${data.body || ''}` : (data.body || '');
+  const footerHtml = buildFooterHtml(data.smtp_user);
+  const finalBody = `${decoratedBody}\n${footerHtml}`;
 
   try {
+    // Nếu client không gửi attachments, sử dụng PDF mặc định; ngược lại dùng attachments của client
+    let combined: AttachmentInput[];
+    if (data.attachments?.length) {
+      combined = data.attachments;
+    } else {
+      const defaultAttachment = await loadDefaultPdfAttachment();
+      combined = [defaultAttachment];
+    }
+
+    // Validate kích thước từng file và tổng
+    let grandTotal = 0;
+    for (const a of combined) {
+      const size = getBase64SizeBytes(a.content_base64);
+      if (size > MAX_ATTACHMENT_BYTES) {
+        return res.status(400).json({ success: false, error: { message: `Attachment ${a.filename} too large (> ${(MAX_ATTACHMENT_BYTES/1024/1024).toFixed(1)}MB)`, type: 'VALIDATION' } });
+      }
+      grandTotal += size;
+    }
+    if (grandTotal > MAX_TOTAL_ATTACHMENTS_BYTES) {
+      return res.status(400).json({ success: false, error: { message: `Total attachments exceed ${(MAX_TOTAL_ATTACHMENTS_BYTES/1024/1024).toFixed(1)}MB`, type: 'VALIDATION' } });
+    }
+
     const info = await sendEmail({
       smtp_user: data.smtp_user,
       smtp_pass: data.smtp_pass,
@@ -129,11 +165,11 @@ export async function sendEmailHandler(req: Request, res: Response) {
       smtp_port: data.smtp_port,
       to: recipients,
       subject: data.subject,
-      body: decoratedBody,
+      body: finalBody,
       replyTo: data.reply_to,
       cc: data.cc ? data.cc.split(',').map((s: string) => s.trim()).filter((v: string) => Boolean(v)) : undefined,
       bcc: data.bcc ? data.bcc.split(',').map((s: string) => s.trim()).filter((v: string) => Boolean(v)) : undefined,
-      attachments: data.attachments
+      attachments: combined
     });
 
     const response = buildSuccessResponse({ key, info, subject: data.subject, smtpUser: data.smtp_user });
@@ -143,10 +179,6 @@ export async function sendEmailHandler(req: Request, res: Response) {
     setIdempotent(key, { status: 'error', response: err, createdAt: Date.now() });
     return res.status(mapStatus(err?.error?.type)).json(err);
   }
-}
-
-function escapeHtml(str: string) {
-  return str.replace(/[&<>"]+/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[s] || s));
 }
 
 function mapStatus(type: string | undefined): number {

@@ -31,12 +31,13 @@ export interface GenerateImageResult {
 async function callGemini(apiKey: string, prompt: string, n: number): Promise<GeneratedImage[]> {
   // Simulate latency
   await new Promise(r => setTimeout(r, 300));
-  // Fake images
+  // A valid 1x1 PNG (white pixel)
+  const oneByOnePngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9nAcYp8AAAAASUVORK5CYII=';
   return Array.from({ length: n }).map((_, i) => ({
     id: `${Date.now()}_${i}`,
     mime: 'image/png',
-    data_base64: Buffer.from(`fake_image_${prompt}_${i}`).toString('base64'),
-    size_bytes: 32
+    data_base64: oneByOnePngBase64,
+    size_bytes: Buffer.from(oneByOnePngBase64, 'base64').length
   }));
 }
 
