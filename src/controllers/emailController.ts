@@ -14,6 +14,7 @@ const emailSchema = z.object({
   to_email: z.string().min(1),
   subject: z.string().max(255).optional(),
   body: z.string().max(200_000).optional(),
+  dear_name: z.string().max(255).optional(),
   smtp_user: z.string().email(),
   smtp_pass: z.string().min(1).transform(v => v.replace(/\s+/g, '')),
   smtp_server: z.string().min(1),
@@ -65,6 +66,9 @@ export async function sendEmailHandler(req: Request, res: Response) {
     return res.json(existing.response);
   }
 
+  // Prep body với Dear Sir
+  const decoratedBody = data.dear_name ? `<p>Dear Sir ${escapeHtml(data.dear_name)}</p>\n${data.body || ''}` : data.body;
+
   try {
     const info = await sendEmail({
       smtp_user: data.smtp_user,
@@ -73,7 +77,7 @@ export async function sendEmailHandler(req: Request, res: Response) {
       smtp_port: data.smtp_port,
       to: recipients,
       subject: data.subject,
-      body: data.body,
+      body: decoratedBody,
       replyTo: data.reply_to,
       cc: data.cc ? data.cc.split(',').map((s: string) => s.trim()).filter((v: string) => Boolean(v)) : undefined,
       bcc: data.bcc ? data.bcc.split(',').map((s: string) => s.trim()).filter((v: string) => Boolean(v)) : undefined,
@@ -87,6 +91,10 @@ export async function sendEmailHandler(req: Request, res: Response) {
     setIdempotent(key, { status: 'error', response: err, createdAt: Date.now() });
     return res.status(mapStatus(err?.error?.type)).json(err);
   }
+}
+
+function escapeHtml(str: string) {
+  return str.replace(/[&<>"]+/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[s] || s));
 }
 
 function mapStatus(type: string | undefined): number {

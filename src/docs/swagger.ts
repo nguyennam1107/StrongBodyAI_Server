@@ -31,6 +31,7 @@ export const swaggerSpec = {
         properties: {
           to_email: { type: 'string', example: 'user1@example.com,user2@example.com' },
           subject: { type: 'string', example: 'Hello' },
+          dear_name: { type: 'string', example: 'John Doe' },
           body: { type: 'string', example: '<b>Hi</b>' },
           smtp_user: { type: 'string', example: 'your@gmail.com' },
           smtp_pass: { type: 'string', example: 'app_password', description: 'App password (khoảng trắng sẽ tự loại bỏ)' },
