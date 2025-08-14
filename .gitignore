@@ -6,3 +6,4 @@ dist
 payload.json
 data_n8n.json
 *.b64
+*.png

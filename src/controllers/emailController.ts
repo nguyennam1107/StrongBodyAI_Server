@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
-import { sendEmail } from '../services/emailService.js';
+import { sendEmail, sendEmailBatch } from '../services/emailService.js';
 import { getIdempotent, setIdempotent } from '../lib/idempotencyStore.js';
 import { logger } from '../utils/logger.js';
 import crypto from 'crypto';
@@ -31,6 +31,36 @@ const emailSchema = z.object({
   cc: z.string().optional(),
   bcc: z.string().optional(),
   attachments: z.array(attachmentSchema).max(5).optional()
+});
+
+const batchEmailSchema = z.object({
+  smtp_user: z.string().email(),
+  smtp_pass: z.string().min(1).transform(v => v.replace(/\s+/g, '')),
+  smtp_server: z.string().min(1),
+  smtp_port: z.coerce.number().int().positive(),
+  idempotency_key: z.string().uuid().optional(),
+  // Legacy batch (items based)
+  default_subject: z.string().max(255).optional(),
+  default_body: z.string().max(200_000).optional(),
+  default_attachments: z.array(attachmentSchema).max(5).optional(),
+  items: z.array(z.object({
+    to_email: z.string().min(1),
+    subject: z.string().max(255).optional(),
+    body: z.string().max(200_000).optional(),
+    dear_name: z.string().max(255).optional(),
+    cc: z.string().optional(),
+    bcc: z.string().optional(),
+    attachments: z.array(attachmentSchema).max(5).optional()
+  })).max(500).optional(),
+  // New bulk simple mode
+  email_bulk: z.string().optional(), // comma separated emails
+  sender_names: z.string().optional(), // comma separated names aligned with emails
+  subject: z.string().max(255).optional(), // subject for bulk mode
+  body_template: z.string().max(200_000).optional(), // body for bulk mode
+  attachments: z.array(attachmentSchema).max(5).optional() // default attachments alias
+}).refine(d => (d.items && d.items.length) || d.email_bulk, {
+  message: 'Provide either items[] or email_bulk',
+  path: ['items']
 });
 
 function deriveKey(payload: any): string {
@@ -175,6 +205,136 @@ export async function sendEmailHandler(req: Request, res: Response) {
     const response = buildSuccessResponse({ key, info, subject: data.subject, smtpUser: data.smtp_user });
     setIdempotent(key, { status: 'success', response, createdAt: Date.now() });
     return res.json(response);
+  } catch (err: any) {
+    setIdempotent(key, { status: 'error', response: err, createdAt: Date.now() });
+    return res.status(mapStatus(err?.error?.type)).json(err);
+  }
+}
+
+export async function sendEmailBatchHandler(req: Request, res: Response) {
+  const parsed = batchEmailSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ success: false, error: { message: parsed.error.message, type: 'VALIDATION' } });
+  }
+  const data = parsed.data;
+
+  // Normalize: if bulk mode provided, transform to items[]
+  let workingItems = data.items ? [...data.items] : [];
+  if ((!workingItems || workingItems.length === 0) && data.email_bulk) {
+    const emails = data.email_bulk.split(',').map(s => s.trim()).filter(Boolean);
+    const names = (data.sender_names || '').split(',').map(s => s.trim());
+    if (names.length && names.length !== emails.length) {
+      return res.status(400).json({ success: false, error: { message: 'sender_names count mismatch with email_bulk', type: 'VALIDATION' } });
+    }
+    workingItems = emails.map((e, idx) => ({
+      to_email: e,
+      dear_name: names[idx] || undefined,
+      subject: data.subject, // per-item subject (can be undefined, fallback later)
+      body: data.body_template
+    }));
+    // Map aliases to legacy defaults if not explicitly set
+    if (!data.default_subject && data.subject) data.default_subject = data.subject;
+    if (!data.default_body && data.body_template) data.default_body = data.body_template;
+    if (!data.default_attachments && data.attachments) data.default_attachments = data.attachments;
+  }
+
+  if (!workingItems.length) {
+    return res.status(400).json({ success: false, error: { message: 'No batch items after normalization', type: 'VALIDATION' } });
+  }
+
+  // Key hash (use either explicit items or normalized)
+  const keyBase = JSON.stringify({
+    smtp_user: data.smtp_user,
+    smtp_server: data.smtp_server,
+    smtp_port: data.smtp_port,
+    default_subject: data.default_subject || '',
+    default_body: data.default_body || '',
+    items: workingItems.map(i => ({ to_email: i.to_email, subject: i.subject || '', body: i.body || '', dear_name: i.dear_name || '' }))
+  });
+  const key = data.idempotency_key || crypto.createHash('sha256').update(keyBase).digest('hex').slice(0, 32);
+  const existing = getIdempotent(key);
+  if (existing && existing.status === 'success') {
+    logger.info({ key }, 'Idempotent replay prevented (batch)');
+    return res.json(existing.response);
+  }
+
+  // Choose default attachments precedence: explicit default_attachments -> attachments alias -> fallback PDF
+  let defaultAttachments: AttachmentInput[] | undefined = undefined;
+  if (data.default_attachments?.length) defaultAttachments = data.default_attachments;
+  else if (data.attachments?.length) defaultAttachments = data.attachments;
+  else {
+    try {
+      const def = await loadDefaultPdfAttachment();
+      defaultAttachments = [def];
+    } catch (e) { logger.warn({ e }, 'Cannot load default PDF for batch'); }
+  }
+
+  // Validate default attachments
+  if (defaultAttachments?.length) {
+    let total = 0;
+    for (const a of defaultAttachments) {
+      const size = getBase64SizeBytes(a.content_base64);
+      if (size > MAX_ATTACHMENT_BYTES) {
+        return res.status(400).json({ success: false, error: { message: `Default attachment ${a.filename} too large (> ${(MAX_ATTACHMENT_BYTES/1024/1024).toFixed(1)}MB)`, type: 'VALIDATION' } });
+      }
+      total += size;
+    }
+    if (total > MAX_TOTAL_ATTACHMENTS_BYTES) {
+      return res.status(400).json({ success: false, error: { message: `Default attachments exceed ${(MAX_TOTAL_ATTACHMENTS_BYTES/1024/1024).toFixed(1)}MB`, type: 'VALIDATION' } });
+    }
+  }
+
+  // Build items for sendEmailBatch
+  const items = [] as any[];
+  for (const it of workingItems) {
+    const recipients = it.to_email.split(',').map((e: string) => e.trim()).filter((v: string) => v);
+    if (!recipients.length) {
+      return res.status(400).json({ success: false, error: { message: 'One of batch items has empty recipient', type: 'INVALID_RECIPIENT' } });
+    }
+
+    // Personal greeting variant: Dear <Name>, (no 'Sir')
+    const dear = it.dear_name ? `<p>Dear ${escapeHtml(it.dear_name)},</p>\n` : '';
+    const footer = buildFooterHtml(data.smtp_user);
+    const finalBody = `${dear}${it.body || data.default_body || ''}\n${footer}`;
+
+    // Validate per-item attachments
+    if (it.attachments?.length) {
+      let totalPerItem = 0;
+      for (const a of it.attachments) {
+        const size = getBase64SizeBytes(a.content_base64);
+        if (size > MAX_ATTACHMENT_BYTES) {
+          return res.status(400).json({ success: false, error: { message: `Attachment ${a.filename} too large in one item`, type: 'VALIDATION' } });
+        }
+        totalPerItem += size;
+      }
+      if (totalPerItem > MAX_TOTAL_ATTACHMENTS_BYTES) {
+        return res.status(400).json({ success: false, error: { message: 'Total attachments exceed limit in one item', type: 'VALIDATION' } });
+      }
+    }
+
+    items.push({
+      to: recipients,
+      subject: it.subject || data.default_subject,
+      body: finalBody,
+      cc: it.cc ? it.cc.split(',').map((s: string) => s.trim()).filter((v: string) => Boolean(v)) : undefined,
+      bcc: it.bcc ? it.bcc.split(',').map((s: string) => s.trim()).filter((v: string) => Boolean(v)) : undefined,
+      attachments: it.attachments
+    });
+  }
+
+  try {
+    const batchResult = await sendEmailBatch({
+      smtp_user: data.smtp_user,
+      smtp_pass: data.smtp_pass,
+      smtp_server: data.smtp_server,
+      smtp_port: data.smtp_port,
+      items,
+      defaultSubject: data.default_subject,
+      defaultBody: data.default_body,
+      defaultAttachments
+    });
+    setIdempotent(key, { status: 'success', response: { ...batchResult, idempotency_key: key }, createdAt: Date.now() });
+    return res.json({ ...batchResult, idempotency_key: key });
   } catch (err: any) {
     setIdempotent(key, { status: 'error', response: err, createdAt: Date.now() });
     return res.status(mapStatus(err?.error?.type)).json(err);
