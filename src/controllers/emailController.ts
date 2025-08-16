@@ -107,7 +107,7 @@ function buildFooterHtml(senderEmail: string): string {
     <img src="./Image/logo.jpeg" alt="StrongBody Logo" style="max-width: 150px; height: auto;">
     <br>
     <p><strong>Email:</strong> ${escapeHtml(senderEmail)}</p>
-    <p><strong>Website:</strong> <a href="https://strongbody.ai" target="_blank">strongbody.ai</a></p>
+    <p><strong>Website:</strong> <a href="https://storage.googleapis.com/strongbody/upload-manually/logo-strongbody.png" target="_blank">strongbody.ai</a></p>
     <p><strong>Address:</strong> 105 CECIL STREET #18-20 THE OCTAGON SINGAPORE 069534</p>
   </div>`;
 }
