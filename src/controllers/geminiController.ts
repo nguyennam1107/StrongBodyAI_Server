@@ -4,7 +4,7 @@ import { generateImages } from '../services/gemini/geminiClient.js';
 import { buildGoogleImagePrompt } from '../template.js';
 
 const generateSchema = z.object({
-  prompt: z.string().min(3).max(5000),
+  prompt: z.string().min(3).max(15000),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
   style: z.string().max(100).optional(),
